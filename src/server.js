@@ -172,7 +172,7 @@ app.get('/api/health', (_req, res) =>
 app.use('/api/inventory', inventoryRoutes)
 
 // POS routes → /api/pos/*
-app.use('/api', posRoutes)
+app.use('/api/pos', posRoutes)
 
 // Grab routes → /api/grab/*
 app.use('/api', grabRoutes)
