@@ -112,7 +112,15 @@ const seedMenus = async () => {
 const app = express()
 
 // Middleware (cukup sekali, hindari duplikasi)
-app.use(cors({ origin: 'http://localhost:5174' })) // aman untuk dev FE
+// Ganti line 122 dengan:
+app.use(cors({
+  origin: [
+    'http://localhost:5173',
+    'http://localhost:5174',
+    'https://pempek-sen-sen-management-fe.vercel.app'
+  ],
+  credentials: true
+})); // aman untuk dev FE
 app.use(express.json())
 app.use(morgan('dev'))
 
