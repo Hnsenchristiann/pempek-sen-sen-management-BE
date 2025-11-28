@@ -15,7 +15,7 @@
 import { Router } from 'express'
 import jwt from 'jsonwebtoken'
 import bcrypt from 'bcryptjs'
-import User from '../models/User.js'
+import User from '../models/user.js'
 
 const router = Router()
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me'

@@ -10,7 +10,7 @@ import { connectDB } from './config/db.js'
 import apiRouter from './routes/index.js'
 
 import bcrypt from 'bcryptjs'
-import User from './models/User.js'
+import User from './models/user.js'
 import inventoryRoutes from './routes/inventory.routes.js'
 import posRoutes from './routes/pos.routes.js'
 import grabRoutes from './routes/grab.routes.js'
