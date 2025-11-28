@@ -131,20 +131,6 @@ const seedTables = async () => {
   }
 }
 
-// Di bagian start, tambahkan:
-connectDB(MONGO_URI).then(async () => {
-  console.log('✓ Admin routes loaded')
-  await seedUsers()
-  await seedMenus()
-  await seedTables()  // ✅ Add this
-
-  setupCleanupScheduler(24 * 60 * 60 * 1000)
-
-  app.listen(PORT, () =>
-    console.log(`🚀 API running at http://localhost:${PORT}`)
-  )
-})
-
 // const clearRoles = async () => {
 //   // Clear all roles so user can create custom roles
 //   // await Role.deleteMany({})
