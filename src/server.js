@@ -102,6 +102,49 @@ const seedMenus = async () => {
   }
 }
 
+// Tambahkan seeder untuk tables
+const seedTables = async () => {
+  try {
+    const Table = await import('./models/posTable.js')
+    const existingTables = await Table.default.countDocuments({})
+
+    if (existingTables > 0) {
+      console.log('✓ Tables already exist')
+      return
+    }
+
+    // Create default 10 tables
+    const tables = []
+    for (let i = 1; i <= 10; i++) {
+      tables.push({
+        number: i,
+        label: `Table ${i}`,
+        status: 'EMPTY',
+        currentOrderId: null
+      })
+    }
+
+    await Table.default.create(tables)
+    console.log('🌱 Seeded 10 default tables')
+  } catch (error) {
+    console.error('❌ Table seeder error:', error.message)
+  }
+}
+
+// Di bagian start, tambahkan:
+connectDB(MONGO_URI).then(async () => {
+  console.log('✓ Admin routes loaded')
+  await seedUsers()
+  await seedMenus()
+  await seedTables()  // ✅ Add this
+
+  setupCleanupScheduler(24 * 60 * 60 * 1000)
+
+  app.listen(PORT, () =>
+    console.log(`🚀 API running at http://localhost:${PORT}`)
+  )
+})
+
 // const clearRoles = async () => {
 //   // Clear all roles so user can create custom roles
 //   // await Role.deleteMany({})
@@ -181,6 +224,7 @@ connectDB(MONGO_URI).then(async () => {
   console.log('✓ Admin routes loaded')
   await seedUsers()
   await seedMenus()
+  await seedTables()  // ✅ Add this
   
   // Setup auto-cleanup untuk proof images (delete setelah 7 hari)
   setupCleanupScheduler(24 * 60 * 60 * 1000) // Run setiap 24 jam
