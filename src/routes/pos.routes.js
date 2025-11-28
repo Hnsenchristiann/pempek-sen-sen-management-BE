@@ -30,31 +30,31 @@ const upload = multer({ storage })
 const router = Router()
 
 // Debug ping
-router.get('/pos/_ping', (_req, res) => res.json({ ok: true, from: 'pos.routes' }))
+router.get('/_ping', (_req, res) => res.json({ ok: true, from: 'pos.routes' }))
 
 // Meja (virtual 1..10)
-router.get('/pos/tables', getTables)
+router.get('/tables', getTables)
 
 // Order per meja
-router.post('/pos/table/:tableNumber/order', getOrCreateOrderForTable)
-router.post('/pos/order/:orderId/items', addItemToOrder)
-router.put('/pos/order/:orderId/items/:orderItemIndex/qty', updateItemQty)
-router.put('/pos/order/:orderId', updateOrderType)  // New: update order type
-router.delete('/pos/order/:orderId/items/:orderItemIndex', removeItem)
-router.post('/pos/order/:orderId/save', saveOrder)
+router.post('/table/:tableNumber/order', getOrCreateOrderForTable)
+router.post('/order/:orderId/items', addItemToOrder)
+router.put('/order/:orderId/items/:orderItemIndex/qty', updateItemQty)
+router.put('/order/:orderId', updateOrderType)  // New: update order type
+router.delete('/order/:orderId/items/:orderItemIndex', removeItem)
+router.post('/order/:orderId/save', saveOrder)
 
 // Kitchen & Checkout
-router.post('/pos/order/:orderId/print-kitchen', printToKitchen)
-router.post('/pos/table/:tableNumber/proceed-checkout', proceedToCheckout)
+router.post('/order/:orderId/print-kitchen', printToKitchen)
+router.post('/table/:tableNumber/proceed-checkout', proceedToCheckout)
 
 // Payment
-router.post('/pos/order/:orderId/pay/cash', confirmPaymentCash)
-router.post('/pos/order/:orderId/pay/qris', upload.single('proof'), confirmPaymentQRIS)
+router.post('/order/:orderId/pay/cash', confirmPaymentCash)
+router.post('/order/:orderId/pay/qris', upload.single('proof'), confirmPaymentQRIS)
 
 // Transactions
-router.get('/pos/transactions', getTransactions)
+router.get('/transactions', getTransactions)
 
 // Sales Analytics
-router.get('/pos/analytics', getSalesAnalytics)
+router.get('/analytics', getSalesAnalytics)
 
 export default router
