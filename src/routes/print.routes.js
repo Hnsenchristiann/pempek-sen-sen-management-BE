@@ -1,5 +1,17 @@
 import express from 'express'
+import fs from 'fs'
+import path from 'path'
+import { fileURLToPath } from 'url'
 import { PrintQueueModel } from '../models/posOrder.js'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const AUTOPRINT_FOLDER = path.join(__dirname, '../../uploads/autoprint')
+
+// Ensure autoprint folder exists
+if (!fs.existsSync(AUTOPRINT_FOLDER)) {
+  fs.mkdirSync(AUTOPRINT_FOLDER, { recursive: true })
+  console.log(`✓ Created autoprint folder: ${AUTOPRINT_FOLDER}`)
+}
 
 const router = express.Router()
 
@@ -182,6 +194,83 @@ router.delete('/cleanup', async (req, res) => {
       deletedCount: result.deletedCount
     })
   } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    })
+  }
+})
+
+/**
+ * POST /api/print/save-for-autoprint
+ * Save ESCPOS data ke file untuk AutoPrint RawBT (folder watching)
+ * AutoPrint akan otomatis pick file terbaru dan print
+ */
+router.post('/save-for-autoprint', async (req, res) => {
+  try {
+    const { escposData, printType, jobId } = req.body
+
+    if (!escposData) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing escposData'
+      })
+    }
+
+    // Nama file: timestamp_printtype_jobid.escpos
+    const timestamp = Date.now()
+    const filename = `${timestamp}_${printType}_${jobId || 'manual'}.escpos`
+    const filepath = path.join(AUTOPRINT_FOLDER, filename)
+
+    // Convert escposData (base64 or string) to binary buffer
+    let buffer
+    if (typeof escposData === 'string') {
+      // Jika sudah base64
+      if (escposData.match(/^[A-Za-z0-9+/=]+$/)) {
+        buffer = Buffer.from(escposData, 'base64')
+      } else {
+        // Raw string - convert to buffer
+        buffer = Buffer.from(escposData, 'utf8')
+      }
+    } else {
+      buffer = Buffer.from(escposData)
+    }
+
+    // Write file
+    fs.writeFileSync(filepath, buffer)
+    console.log(`💾 Saved ESCPOS to autoprint folder: ${filename} (${buffer.length} bytes)`)
+
+    // Optional: Delete old files (keep only last 10)
+    try {
+      const files = fs.readdirSync(AUTOPRINT_FOLDER)
+        .filter(f => f.endsWith('.escpos'))
+        .map(f => ({
+          name: f,
+          path: path.join(AUTOPRINT_FOLDER, f),
+          time: fs.statSync(path.join(AUTOPRINT_FOLDER, f)).mtime.getTime()
+        }))
+        .sort((a, b) => b.time - a.time)
+
+      // Delete files older than 10
+      if (files.length > 10) {
+        files.slice(10).forEach(f => {
+          fs.unlinkSync(f.path)
+          console.log(`🗑️  Deleted old autoprint file: ${f.name}`)
+        })
+      }
+    } catch (cleanupErr) {
+      console.warn('Autoprint cleanup warning:', cleanupErr.message)
+    }
+
+    res.json({
+      success: true,
+      filename,
+      path: filepath,
+      size: buffer.length,
+      message: 'ESCPOS saved for AutoPrint'
+    })
+  } catch (error) {
+    console.error('Save autoprint error:', error)
     res.status(500).json({
       success: false,
       error: error.message
