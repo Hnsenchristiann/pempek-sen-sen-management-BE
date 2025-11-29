@@ -202,6 +202,57 @@ router.delete('/cleanup', async (req, res) => {
 })
 
 /**
+ * GET /api/print/download/:jobId
+ * Download ESCPOS file for tablet (to save to Download folder)
+ */
+router.get('/download/:jobId', async (req, res) => {
+  try {
+    const job = await PrintQueueModel.findById(req.params.jobId)
+
+    if (!job) {
+      return res.status(404).json({
+        success: false,
+        error: 'Print job not found'
+      })
+    }
+
+    if (!job.escposData) {
+      return res.status(400).json({
+        success: false,
+        error: 'No ESCPOS data available'
+      })
+    }
+
+    // Send as binary file for download
+    const filename = `print_${job._id}_${job.printType}.escpos`
+    
+    // Convert to buffer
+    let buffer
+    if (typeof job.escposData === 'string') {
+      if (job.escposData.match(/^[A-Za-z0-9+/=]+$/)) {
+        buffer = Buffer.from(job.escposData, 'base64')
+      } else {
+        buffer = Buffer.from(job.escposData, 'utf8')
+      }
+    } else {
+      buffer = Buffer.from(job.escposData)
+    }
+
+    res.setHeader('Content-Type', 'application/octet-stream')
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
+    res.send(buffer)
+
+    console.log(`📥 ESCPOS file downloaded: ${filename} (${buffer.length} bytes)`)
+  } catch (error) {
+    console.error('Download ESCPOS error:', error)
+    res.status(500).json({
+      success: false,
+      error: error.message
+    })
+  }
+})
+
+/**
  * POST /api/print/save-for-autoprint
  * Save ESCPOS data ke file untuk AutoPrint RawBT (folder watching)
  * AutoPrint akan otomatis pick file terbaru dan print
