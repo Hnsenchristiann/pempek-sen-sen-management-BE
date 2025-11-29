@@ -372,36 +372,38 @@ export async function saveOrder(req, res) {
 }
 
 // Kitchen print
-// Helper: Generate ESCPOS format untuk thermal printer
+// Helper: Generate ESCPOS format untuk thermal printer 58mm
 /**
  * ESC/POS (Epson Standard Code for Point of Sale)
  * Format binary untuk thermal printer 58mm (standard untuk kitchen/kasir)
  * 
- * Output format:
+ * Layout KITCHEN TICKET:
  * ================
- * KITCHEN TICKET
+ *        DAPUR
  * ================
  * ORDER #: 20251126-001
  * TABLE: 5
  * TIME: 14:30:45
  * ================
  * ITEMS:
- * ---
- * 2x Pempek Telur
+ * [02] PEMPEK TELUR
  *   [PAKET ITEMS]:
- *     - 2x Pempek Telur
- *     - 1x Cuko
- * 1x Es Teh
- *   NOTE: Jangan pakai gula
+ *     • 2x Pempek Telur
+ *     • 1x Cuko
+ * [01] ES TEH
+ *   → Jangan pakai gula
  * ================
- * PRINTED: 26/11/2025 14:30:45
+ * MAKAN DITEMPAT
  * 
  * Layout dirancang agar kitchen staff tahu:
- * 1. Nomor order (untuk tahu urutan)
- * 2. Meja mana (untuk tahu di mana customer)
- * 3. Item apa aja (tanpa harga - cuma urutan bikin)
- * 4. Note khusus (ada yang skip/extra)
- * 5. Paket breakdown (jika ada paket)
+ * 1. DAPUR header (jelas ini untuk kitchen)
+ * 2. Nomor order (untuk tahu urutan)
+ * 3. Meja mana (untuk tahu di mana customer)
+ * 4. Item apa aja (tanpa harga - cuma urutan bikin)
+ * 5. Qty sangat besar & menonjol
+ * 6. Note khusus (ada yang skip/extra)
+ * 7. Paket breakdown (jika ada paket)
+ * 8. Order type (MAKAN DITEMPAT / BUNGKUS)
  */
 function generateKitchenTicketEscpos(order) {
   const ESC = '\x1b'
@@ -410,99 +412,88 @@ function generateKitchenTicketEscpos(order) {
   
   let output = ''
   
-  // Initialize + BOLD
-  output += ESC + '@'
-  output += ESC + 'E\x01'  // BOLD ON (semua text BOLD)
+  // Initialize
+  output += ESC + '@'  // Reset printer
+  output += ESC + 'E\x01'  // BOLD ON
   
-  // HEADER - DAPUR (super besar)
-  output += ESC + 'a\x01'  // Center
-  output += GS + '!' + '\x77'  // 4x width + 4x height
+  // ============ HEADER: DAPUR ============
+  output += ESC + 'a\x01'  // CENTER
+  output += LF
+  output += GS + '!' + '\x77'  // 4x width + 4x height (sangat besar)
   output += 'DAPUR' + LF
-  output += GS + '!' + '\x00'  // Reset
+  output += GS + '!' + '\x00'  // Reset size
+  output += ESC + 'a\x00'  // LEFT align
   output += LF
   
-  // ORDER NUMBER (BOXED, BESAR)
-  output += ESC + 'a\x00'  // Left
-  output += '#' + '#'.repeat(28) + LF
-  output += GS + '!' + '\x31'  // 2x size
-  output += ' ORDER: ' + String(order.queueNumber || '000').padStart(3, '0') + LF
-  output += '#' + '#'.repeat(28) + LF
-  output += GS + '!' + '\x00'  // Reset
-  output += LF
-  
-  // TABLE & TIME (besar)
-  output += GS + '!' + '\x31'  // 2x size
-  output += 'MEJA: ' + String(order.tableNumber || '-').substring(0, 10).toUpperCase() + LF
-  output += 'JAM : ' + new Date(order.createdAt).toLocaleTimeString('id-ID', {
+  // ============ ORDER INFO ============
+  output += '=====================================\n'
+  output += ' ORDER: ' + String(order.queueNumber || 'XXX').padStart(3, '0') + LF
+  output += ' TABLE: ' + String(order.tableNumber || '-') + LF
+  output += ' TIME : ' + new Date(order.createdAt).toLocaleTimeString('id-ID', {
     hour: '2-digit',
-    minute: '2-digit'
+    minute: '2-digit',
+    second: '2-digit'
   }) + LF
-  output += GS + '!' + '\x00'  // Reset
-  output += LF + LF
+  output += '=====================================\n'
+  output += LF
   
-  // ITEMS SEPARATOR
-  output += '=' + '='.repeat(28) + LF + LF
-  
-  // ITEMS (BESAR QTY)
+  // ============ ITEMS SECTION ============
   for (const item of order.items) {
-    // Quantity - SANGAT BESAR
+    // QUANTITY - VERY LARGE & BOLD
     output += GS + '!' + '\x77'  // 4x size
     output += '[' + String(item.qty).padStart(2, '0') + ']' + LF
     
-    // Item name - 2x width
+    // Item name - bold
     output += GS + '!' + '\x11'  // 2x width
     output += item.itemName.toUpperCase().substring(0, 22) + LF
-    output += GS + '!' + '\x00'  // Reset
+    output += GS + '!' + '\x00'  // Reset size
     
     // Notes if any
     if (item.note) {
-      output += '  → ' + item.note.substring(0, 18) + LF
+      output += '  → NOTE: ' + item.note.substring(0, 20) + LF
     }
     
-    // Paket items jika ada
+    // Paket items breakdown
     if (item.isPaket && item.paketItems && item.paketItems.length > 0) {
+      output += '  [PAKET ITEMS]:' + LF
       for (const pItem of item.paketItems) {
         const pQty = (pItem.quantity || 1) * item.qty
         const pName = pItem.itemId?.name || pItem.name || 'Item'
-        output += '  • ' + pQty + 'x ' + pName.substring(0, 18) + LF
+        output += '    • ' + pQty + 'x ' + pName.substring(0, 18) + LF
       }
     }
     
     output += LF
   }
   
-  output += '=' + '='.repeat(28) + LF + LF
-  
-  // ORDER TYPE (BESAR)
-  output += ESC + 'a\x01'  // Center
-  output += GS + '!' + '\x31'  // 2x size
-  const orderType = order.orderType === 'TAKEAWAY' ? 'BUNGKUS' : 'MAKAN\nDITEMPAT'
-  output += orderType + LF
-  output += GS + '!' + '\x00'  // Reset
+  output += '=====================================\n'
   output += LF
   
-  // RUSH INDICATOR jika ada
+  // ============ ORDER TYPE ============
+  output += ESC + 'a\x01'  // CENTER
+  output += GS + '!' + '\x31'  // 2x size
+  const orderType = order.orderType === 'TAKEAWAY' ? 'BUNGKUS' : 'MAKAN DITEMPAT'
+  output += orderType + LF
+  output += GS + '!' + '\x00'  // Reset
+  output += ESC + 'a\x00'  // LEFT
+  output += LF
+  
+  // RUSH INDICATOR
   if (order.priority === 'RUSH' || order.isRush) {
+    output += ESC + 'a\x01'  // CENTER
     output += GS + '!' + '\x77'  // 4x size
     output += '!!! SEGERA !!!' + LF
     output += GS + '!' + '\x00'  // Reset
+    output += ESC + 'a\x00'  // LEFT
     output += LF
   }
   
-  // TIMESTAMP
-  output += ESC + 'a\x00'  // Left
-  output += new Date().toLocaleString('id-ID', {
-    day: '2-digit',
-    month: 'short',
-    year: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit'
-  }).toUpperCase() + LF + LF
+  // Timestamp
+  output += 'PRINTED: ' + new Date().toLocaleString('id-ID') + LF
   
   // Paper cut
   output += LF + LF + LF
-  output += GS + 'V\x42\x00'
+  output += GS + 'V\x42\x00'  // Full cut
   
   return output
 }
@@ -520,27 +511,20 @@ export async function printToKitchen(req, res) {
   // Generate ESCPOS format
   const escposData = generateKitchenTicketEscpos(order)
   
-  // Also return printable object untuk backward compatibility (untuk web print)
-  const printable = {
-    title: 'KITCHEN TICKET',
+  console.log('📤 Kitchen Ticket Generated:', {
+    orderId: order._id,
     queueNumber: order.queueNumber,
-    orderId: order._id.toString(),
-    tableNumber: order.tableNumber,
-    createdAt: order.createdAt,
-    items: order.items.map(it => ({ 
-      name: it.itemName, 
-      qty: it.qty, 
-      note: it.note,
-      isPaket: it.isPaket,
-      paketItems: it.paketItems
-    })),
-  }
+    itemsCount: order.items.length,
+    escposLength: escposData.length
+  })
   
-  // Return both formats
+  // Return ESCPOS data untuk thermal printer
   res.json({ 
-    printable,
-    escpos: escposData,  // For thermal printer (binary string)
-    success: true
+    success: true,
+    type: 'KITCHEN_TICKET',
+    escposData,  // For thermal printer
+    queueNumber: order.queueNumber,
+    message: 'Kitchen ticket generated for AutoPrint'
   })
 }
 
@@ -565,10 +549,36 @@ export async function proceedToCheckout(req, res) {
 
 // Pembayaran CASH
 /**
- * Generate Receipt ESCPOS Format
+ * Generate Receipt ESCPOS Format (58mm Thermal)
  * 
- * Digunakan untuk print struk ke thermal printer via Bluetooth
- * Format: ESCPOS (Epson Standard Code for POS)
+ * Layout:
+ * =====================================
+ *              PS
+ *        STRUK PEMBAYARAN
+ *       Pempek Sen Sen
+ *     Terima Kasih Berbelanja
+ * =====================================
+ * No Antrian : 001
+ * Meja       : 5
+ * Waktu      : 14:30
+ * =====================================
+ * ITEM             QTY  HARGA
+ * - - - - - - - - - - - - - - - - - - - 
+ * Pempek Telur      2  Rp 20.000
+ * Es Teh            1  Rp 5.000
+ * - - - - - - - - - - - - - - - - - - - 
+ * 
+ *              TOTAL
+ *           Rp 25.000
+ * 
+ * =====================================
+ * Metode  : CASH
+ * Bayar   : Rp 50.000
+ * Kembali : Rp 25.000
+ * =====================================
+ *          TERIMA KASIH
+ *    Semoga puas dengan layanan kami
+ * =====================================
  */
 function generateReceiptEscpos(order, payment) {
   const ESC = '\x1b'
@@ -577,15 +587,16 @@ function generateReceiptEscpos(order, payment) {
   
   let output = ''
   
-  // Initialize + BOLD
-  output += ESC + '@'
-  output += ESC + 'E\x01'  // BOLD ON (semua text BOLD)
+  // Initialize
+  output += ESC + '@'  // Reset
+  output += ESC + 'E\x01'  // BOLD ON
   
-  // LOGO / HEADER (super besar)
-  output += ESC + 'a\x01'  // Center
-  output += GS + '!' + '\x77'  // 4x width + 4x height
-  output += 'PS' + LF  // Logo singkat
-  output += GS + '!' + '\x00'  // Reset
+  // ============ LOGO / HEADER ============
+  output += ESC + 'a\x01'  // CENTER
+  output += LF
+  output += GS + '!' + '\x77'  // 4x size (super besar)
+  output += 'PS' + LF
+  output += GS + '!' + '\x00'  // Reset size
   output += LF
   
   // TITLE
@@ -593,53 +604,55 @@ function generateReceiptEscpos(order, payment) {
   output += 'STRUK PEMBAYARAN' + LF
   output += GS + '!' + '\x00'  // Reset
   output += 'Pempek Sen Sen' + LF
-  output += 'Terima Kasih Berbelanja' + LF + LF
+  output += 'Terima Kasih Berbelanja' + LF
+  output += LF
   
-  // SEPARATOR
-  output += '=' + '='.repeat(28) + LF
-  
-  // ORDER INFO
-  output += ESC + 'a\x00'  // Left
-  output += 'No Antrian : ' + String(order.queueNumber || '-').padStart(3, '0') + LF
-  output += 'Meja       : ' + String(order.tableNumber || '-').substring(0, 10) + LF
+  // ============ SEPARATOR & ORDER INFO ============
+  output += ESC + 'a\x00'  // LEFT
+  output += '=====================================\n'
+  output += 'No Antrian : ' + String(order.queueNumber || 'XXX').padStart(3, '0') + LF
+  output += 'Meja       : ' + String(order.tableNumber || '-') + LF
   output += 'Waktu      : ' + new Date(order.createdAt).toLocaleString('id-ID', {
     hour: '2-digit',
     minute: '2-digit'
   }) + LF
-  output += '=' + '='.repeat(28) + LF + LF
+  output += '=====================================\n'
+  output += LF
   
-  // ITEMS HEADER
-  output += 'ITEM             QTY  TOTAL' + LF
-  output += '-' + '-'.repeat(28) + LF
+  // ============ ITEMS HEADER ============
+  output += 'ITEM             QTY  HARGA' + LF
+  output += '- - - - - - - - - - - - - - - - - - - \n'
   
-  // ITEMS (max 32 chars per line untuk 58mm)
+  // ITEMS
   for (const item of order.items) {
     const name = (item.itemName || 'Item').substring(0, 16).padEnd(16)
     const qty = String(item.qty).padStart(2)
-    const subtotal = formatRupiah(item.subtotal || 0).substring(0, 10).padStart(10)
+    const subtotal = formatRupiah(item.subtotal || 0).substring(0, 11).padStart(11)
     output += name + qty + ' ' + subtotal + LF
   }
   
-  output += '-' + '-'.repeat(28) + LF + LF
+  output += '- - - - - - - - - - - - - - - - - - - \n'
+  output += LF
   
-  // TOTAL (BESAR)
-  output += ESC + 'a\x01'  // Center
+  // ============ TOTAL ============
+  output += ESC + 'a\x01'  // CENTER
   output += GS + '!' + '\x31'  // 2x size
   output += 'TOTAL' + LF
   output += formatRupiah(order.total) + LF
   output += GS + '!' + '\x00'  // Reset
+  output += ESC + 'a\x00'  // LEFT
   output += LF + LF
   
-  // PAYMENT INFO
-  output += ESC + 'a\x00'  // Left
-  output += '=' + '='.repeat(28) + LF
-  output += 'Metode  : ' + (payment.method || '-').substring(0, 15) + LF
+  // ============ PAYMENT INFO ============
+  output += '=====================================\n'
+  output += 'Metode  : ' + (payment.method || 'CASH').substring(0, 15).padEnd(15) + LF
   output += 'Bayar   : ' + formatRupiah(payment.paidAmount || 0) + LF
   output += 'Kembali : ' + formatRupiah(payment.changeAmount || 0) + LF
-  output += '=' + '='.repeat(28) + LF + LF
+  output += '=====================================\n'
+  output += LF
   
-  // FOOTER
-  output += ESC + 'a\x01'  // Center
+  // ============ FOOTER ============
+  output += ESC + 'a\x01'  // CENTER
   output += GS + '!' + '\x11'  // 2x width
   output += 'TERIMA KASIH' + LF
   output += GS + '!' + '\x00'  // Reset
@@ -647,9 +660,10 @@ function generateReceiptEscpos(order, payment) {
   output += new Date().toLocaleString('id-ID', {
     hour: '2-digit',
     minute: '2-digit'
-  }) + LF + LF
+  }) + LF
+  output += LF
   
-  // Paper cut dengan spacing
+  // Paper cut
   output += LF + LF + LF
   output += GS + 'V\x42\x00'
   
@@ -683,14 +697,15 @@ export async function confirmPaymentCash(req, res) {
     confirmedAt: new Date(),
   }
   order.status = 'PAID'
-  order.markModified('payment') // Ensure Mongoose detects change
+  order.markModified('payment')
   await order.save()
 
-  // Refresh dari DB untuk pastikan semua field tersimpan
+  // Refresh dari DB
   order = await PosOrder.findById(orderId)
 
   console.log('✅ CASH Payment Confirmed:', {
     orderId: order._id,
+    queueNumber: order.queueNumber,
     paidAmount: order.payment?.paidAmount,
     changeAmount: order.payment?.changeAmount,
   })
@@ -698,16 +713,21 @@ export async function confirmPaymentCash(req, res) {
   // Create inventory movements for sold items
   await createSaleInventoryMovements(order)
 
-  // Populate paketItems.itemId untuk detail di receipt
+  // Populate paketItems.itemId
   await order.populate('items.paketItems.itemId')
 
   // Generate ESCPOS untuk Bluetooth printer
   const escposData = generateReceiptEscpos(order, order.payment)
 
   res.json({ 
-    order,
-    escpos: escposData,
-    message: 'Payment confirmed. Send escpos data to Bluetooth printer.'
+    success: true,
+    type: 'RECEIPT',
+    escposData,
+    queueNumber: order.queueNumber,
+    total: order.total,
+    paidAmount: order.payment.paidAmount,
+    changeAmount: order.payment.changeAmount,
+    message: 'Payment confirmed. Receipt ready for Bluetooth printer'
   })
 }
 
@@ -774,21 +794,22 @@ export async function confirmPaymentQRIS(req, res) {
 
   order.payment = {
     method: 'QRIS',
-    paidAmount: order.total, // Auto-fill dengan nominal tertagih
-    changeAmount: 0, // QRIS tidak ada kembalian
+    paidAmount: order.total,
+    changeAmount: 0,
     qrisProofUrl: `/uploads/${file.filename}`,
-    uploadedAt: new Date(), // Timestamp untuk auto-delete 7 hari
+    uploadedAt: new Date(),
     confirmedAt: new Date(),
   }
   order.status = 'PAID'
-  order.markModified('payment') // Ensure Mongoose detects change
+  order.markModified('payment')
   await order.save()
 
-  // Refresh dari DB untuk pastikan semua field tersimpan
+  // Refresh dari DB
   order = await PosOrder.findById(orderId)
 
   console.log('✅ QRIS Payment Confirmed:', {
     orderId: order._id,
+    queueNumber: order.queueNumber,
     paidAmount: order.payment?.paidAmount,
     qrisProofUrl: order.payment?.qrisProofUrl,
     filename: file.filename,
@@ -797,16 +818,21 @@ export async function confirmPaymentQRIS(req, res) {
   // Create inventory movements for sold items
   await createSaleInventoryMovements(order)
 
-  // Populate paketItems.itemId untuk detail di receipt
+  // Populate paketItems.itemId
   await order.populate('items.paketItems.itemId')
 
   // Generate ESCPOS untuk Bluetooth printer
   const escposData = generateReceiptEscpos(order, order.payment)
 
   res.json({ 
-    order,
-    escpos: escposData,
-    message: 'Payment confirmed. Send escpos data to Bluetooth printer.'
+    success: true,
+    type: 'RECEIPT',
+    escposData,
+    queueNumber: order.queueNumber,
+    total: order.total,
+    paidAmount: order.payment.paidAmount,
+    qrisProofUrl: order.payment.qrisProofUrl,
+    message: 'QRIS payment confirmed. Receipt ready for Bluetooth printer'
   })
 }
 
