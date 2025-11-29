@@ -586,88 +586,72 @@ function generateReceiptEscpos(order, payment) {
 
   let output = ''
 
+  const LINE = '-'.repeat(32) + LF
+  const EQLINE = '='.repeat(32) + LF
+
   // Initialize
-  output += ESC + '@'  // Reset
-  output += ESC + 'E\x01'  // BOLD ON
+  output += ESC + '@'
 
-  // ============ LOGO / HEADER ============
-  output += ESC + 'a\x01'  // CENTER
+  // ========= HEADER / LOGO =========
+  output += ESC + 'a\x01'        // Center
   output += LF
-  output += GS + '!' + '\x77'  // 4x size (super besar)
+  output += GS + '!\x22'         // Font 3x (aman untuk 58mm)
   output += 'PS' + LF
-  output += GS + '!' + '\x00'  // Reset size
-  output += LF
-
-  // TITLE
-  output += GS + '!' + '\x31'  // 2x size
-  output += 'STRUK PEMBAYARAN' + LF
-  output += GS + '!' + '\x00'  // Reset
+  output += GS + '!\x00'
   output += 'Pempek Sen Sen' + LF
-  output += 'Terima Kasih Berbelanja' + LF
-  output += LF
+  output += 'Terima Kasih Telah Berbelanja' + LF + LF
 
-  // ============ SEPARATOR & ORDER INFO ============
-  output += ESC + 'a\x00'  // LEFT
-  output += '=====================================\n'
-  output += 'No Antrian : ' + String(order.queueNumber || 'XXX').padStart(3, '0') + LF
-  output += 'Meja       : ' + String(order.tableNumber || '-') + LF
-  output += 'Waktu      : ' + new Date(order.createdAt).toLocaleString('id-ID', {
-    hour: '2-digit',
-    minute: '2-digit'
-  }) + LF
-  output += '=====================================\n'
-  output += LF
+  // ========= ORDER INFO =========
+  output += ESC + 'a\x00'        // Left
+  output += EQLINE
+  output += `No Antrian : ${String(order.queueNumber || 'XXX').padStart(3, '0')}` + LF
+  output += `Meja       : ${String(order.tableNumber || '-')}` + LF
+  output += `Waktu      : ${new Date(order.createdAt).toLocaleString('id-ID')}` + LF
+  output += EQLINE + LF
 
-  // ============ ITEMS HEADER ============
-  output += 'ITEM             QTY  HARGA' + LF
-  output += '- - - - - - - - - - - - - - - - - - - \n'
+  // ========= ITEM LIST =========
+  output += 'ITEM               QTY     SUB' + LF
+  output += LINE
 
-  // ITEMS
-  for (const item of order.items) {
-    const name = (item.itemName || 'Item').substring(0, 16).padEnd(16)
-    const qty = String(item.qty).padStart(2)
-    const subtotal = formatRupiah(item.subtotal || 0).substring(0, 11).padStart(11)
-    output += name + qty + ' ' + subtotal + LF
+  for (const item of order.items || []) {
+    const name = (item.itemName || '').substring(0, 16).padEnd(16)
+    const qty = String(item.qty).padStart(3)
+    const subtotal = formatRupiah(item.subtotal || 0).padStart(11)
+    output += `${name}${qty}${subtotal}` + LF
   }
 
-  output += '- - - - - - - - - - - - - - - - - - - \n'
-  output += LF
+  output += LINE + LF
 
-  // ============ TOTAL ============
-  output += ESC + 'a\x01'  // CENTER
-  output += GS + '!' + '\x31'  // 2x size
+  // ========= TOTAL =========
+  output += ESC + 'a\x01'
+  output += GS + '!\x11'         // Bold & 2x width
   output += 'TOTAL' + LF
   output += formatRupiah(order.total) + LF
-  output += GS + '!' + '\x00'  // Reset
-  output += ESC + 'a\x00'  // LEFT
-  output += LF + LF
+  output += GS + '!\x00' + LF
 
-  // ============ PAYMENT INFO ============
-  output += '=====================================\n'
-  output += 'Metode  : ' + (payment.method || 'CASH').substring(0, 15).padEnd(15) + LF
-  output += 'Bayar   : ' + formatRupiah(payment.paidAmount || 0) + LF
-  output += 'Kembali : ' + formatRupiah(payment.changeAmount || 0) + LF
-  output += '=====================================\n'
-  output += LF
+  // ========= PAYMENT =========
+  output += ESC + 'a\x00'
+  output += EQLINE
+  output += `Metode  : ${(payment.method || 'CASH')}` + LF
+  output += `Bayar   : ${formatRupiah(payment.paidAmount || 0)}` + LF
+  output += `Kembali : ${formatRupiah(payment.changeAmount || 0)}` + LF
+  output += EQLINE + LF
 
-  // ============ FOOTER ============
-  output += ESC + 'a\x01'  // CENTER
-  output += GS + '!' + '\x11'  // 2x width
+  // ========= FOOTER =========
+  output += ESC + 'a\x01'
+  output += GS + '!\x11'
   output += 'TERIMA KASIH' + LF
-  output += GS + '!' + '\x00'  // Reset
+  output += GS + '!\x00'
   output += 'Semoga puas dengan layanan kami' + LF
-  output += new Date().toLocaleString('id-ID', {
-    hour: '2-digit',
-    minute: '2-digit'
-  }) + LF
-  output += LF
+  output += new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + LF
 
-  // Paper cut
+  // Feed & Cut
   output += LF + LF + LF
   output += GS + 'V\x42\x00'
 
   return output
 }
+
 
 function formatRupiah(amount) {
   return new Intl.NumberFormat('id-ID', {
