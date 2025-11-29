@@ -8,14 +8,14 @@ import fs from 'fs'
 
 /**
  * PAKET ITEMS POPULATE FIX (Nov 26, 2025)
- * 
+ *
  * Problem: Ketika order dengan paket dikirim ke frontend, paketItems[].itemId hanya ObjectId,
  * bukan object dengan nama, sku, price. Ini membuat dropdown detail di POSTableOrder dan
  * POSCheckout tidak bisa tampil informasi produk.
- * 
+ *
  * Solution: Tambah .populate('items.paketItems.itemId') ke semua function yang return order.
  * Mongoose akan fetch detail Item dari collection dan replace ObjectId dengan object lengkap.
- * 
+ *
  * Affected functions:
  * - getOrCreateOrderForTable: populate saat fetch order dari DB
  * - addItemToOrder: populate sebelum return response
@@ -81,7 +81,7 @@ async function createSaleInventoryMovements(order) {
   try {
     // Gunakan order.createdAt untuk semua inventory movements agar konsisten
     const movementDate = order.createdAt || new Date()
-    
+
     console.log('🔍 Creating inventory movements for order:', {
       orderId: order._id,
       items: order.items.map(it => ({
@@ -91,7 +91,7 @@ async function createSaleInventoryMovements(order) {
         paketItems: it.paketItems
       }))
     })
-    
+
     for (const item of order.items) {
       // Regular item
       if (!item.isPaket) {
@@ -111,9 +111,9 @@ async function createSaleInventoryMovements(order) {
           for (const paketItem of item.paketItems) {
             const itemIdToReduce = paketItem.itemId?._id || paketItem.itemId
             const qty = (paketItem.quantity || 1) * item.qty
-            
+
             console.log(`  └─ Reducing item ${itemIdToReduce} by qty ${qty}`)
-            
+
             await InventoryMovement.create({
               itemId: itemIdToReduce,
               date: movementDate,
@@ -197,7 +197,7 @@ export async function getOrCreateOrderForTable(req, res) {
     if (!shouldCreate) {
       return res.status(404).json({ message: 'No active order for this table' })
     }
-    
+
     const queueNumber = await generateQueueNumber()
     order = await PosOrder.create({
       tableNumber: num,
@@ -279,10 +279,10 @@ export async function addItemToOrder(req, res) {
   order.total = computeTotals(order.items)
   await autoAdjustOrderStatus(order)
   await order.save()
-  
+
   // Populate paketItems.itemId untuk menampilkan detail produk di frontend
   await order.populate('items.paketItems.itemId')
-  
+
   console.log('✅ Order saved with items:', {
     orderId: order._id,
     itemsCount: order.items.length,
@@ -292,7 +292,7 @@ export async function addItemToOrder(req, res) {
       paketItemsCount: it.paketItems?.length || 0
     }))
   })
-  
+
   res.json({ order })
 }
 
@@ -376,7 +376,7 @@ export async function saveOrder(req, res) {
 /**
  * ESC/POS (Epson Standard Code for Point of Sale)
  * Format binary untuk thermal printer 58mm (standard untuk kitchen/kasir)
- * 
+ *
  * Layout KITCHEN TICKET:
  * ================
  *        DAPUR
@@ -394,7 +394,7 @@ export async function saveOrder(req, res) {
  *   → Jangan pakai gula
  * ================
  * MAKAN DITEMPAT
- * 
+ *
  * Layout dirancang agar kitchen staff tahu:
  * 1. DAPUR header (jelas ini untuk kitchen)
  * 2. Nomor order (untuk tahu urutan)
@@ -409,13 +409,13 @@ function generateKitchenTicketEscpos(order) {
   const ESC = '\x1b'
   const GS = '\x1d'
   const LF = '\x0a'
-  
+
   let output = ''
-  
+
   // Initialize
   output += ESC + '@'  // Reset printer
   output += ESC + 'E\x01'  // BOLD ON
-  
+
   // ============ HEADER: DAPUR ============
   output += ESC + 'a\x01'  // CENTER
   output += LF
@@ -424,7 +424,7 @@ function generateKitchenTicketEscpos(order) {
   output += GS + '!' + '\x00'  // Reset size
   output += ESC + 'a\x00'  // LEFT align
   output += LF
-  
+
   // ============ ORDER INFO ============
   output += '================================\n'
   output += ' ORDER: ' + String(order.queueNumber || 'XXX').padStart(3, '0') + LF
@@ -436,22 +436,22 @@ function generateKitchenTicketEscpos(order) {
   }) + LF
   output += '================================\n'
   output += LF
-  
+
   // ============ ITEMS SECTION ============
   for (const item of order.items) {
     // QUANTITY - VERY LARGE & BOLD
     output += GS + '!' + '\x77'  // 4x size
     output += '[' + String(item.qty).padStart(2, '0') + ']' + LF
-    
+
     // Item name - normal size (same as order info)
     output += GS + '!' + '\x00'  // Reset size to normal
     output += item.itemName.toUpperCase().substring(0, 32) + LF
-    
+
     // Notes if any
     if (item.note) {
       output += '  → NOTE: ' + item.note.substring(0, 28) + LF
     }
-    
+
     // Paket items breakdown
     if (item.isPaket && item.paketItems && item.paketItems.length > 0) {
       output += '  [PAKET ITEMS]:' + LF
@@ -461,22 +461,22 @@ function generateKitchenTicketEscpos(order) {
         output += '    • ' + pQty + 'x ' + pName.substring(0, 24) + LF
       }
     }
-    
+
     output += LF
   }
-  
+
   output += '================================\n'
   output += LF
-  
+
   // ============ ORDER TYPE ============
   output += ESC + 'a\x01'  // CENTER
-  output += GS + '!' + '\x31'  // 2x size
+  output += GS + '!' + '\x00'  // 2x size
   const orderType = order.orderType === 'TAKEAWAY' ? 'BUNGKUS' : 'MAKAN DITEMPAT'
   output += orderType + LF
   output += GS + '!' + '\x00'  // Reset
   output += ESC + 'a\x00'  // LEFT
   output += LF
-  
+
   // RUSH INDICATOR
   if (order.priority === 'RUSH' || order.isRush) {
     output += ESC + 'a\x01'  // CENTER
@@ -486,14 +486,14 @@ function generateKitchenTicketEscpos(order) {
     output += ESC + 'a\x00'  // LEFT
     output += LF
   }
-  
+
   // Timestamp
   output += 'PRINTED: ' + new Date().toLocaleString('id-ID') + LF
-  
+
   // Paper cut
   output += LF + LF + LF
   output += GS + 'V\x42\x00'  // Full cut
-  
+
   return output
 }
 
@@ -509,16 +509,16 @@ export async function printToKitchen(req, res) {
 
   // Generate ESCPOS format
   const escposData = generateKitchenTicketEscpos(order)
-  
+
   console.log('📤 Kitchen Ticket Generated:', {
     orderId: order._id,
     queueNumber: order.queueNumber,
     itemsCount: order.items.length,
     escposLength: escposData.length
   })
-  
+
   // Return ESCPOS data untuk thermal printer
-  res.json({ 
+  res.json({
     success: true,
     type: 'KITCHEN_TICKET',
     escposData,  // For thermal printer
@@ -549,7 +549,7 @@ export async function proceedToCheckout(req, res) {
 // Pembayaran CASH
 /**
  * Generate Receipt ESCPOS Format (58mm Thermal)
- * 
+ *
  * Layout:
  * =====================================
  *              PS
@@ -562,14 +562,14 @@ export async function proceedToCheckout(req, res) {
  * Waktu      : 14:30
  * =====================================
  * ITEM             QTY  HARGA
- * - - - - - - - - - - - - - - - - - - - 
+ * - - - - - - - - - - - - - - - - - - -
  * Pempek Telur      2  Rp 20.000
  * Es Teh            1  Rp 5.000
- * - - - - - - - - - - - - - - - - - - - 
- * 
+ * - - - - - - - - - - - - - - - - - - -
+ *
  *              TOTAL
  *           Rp 25.000
- * 
+ *
  * =====================================
  * Metode  : CASH
  * Bayar   : Rp 50.000
@@ -583,13 +583,13 @@ function generateReceiptEscpos(order, payment) {
   const ESC = '\x1b'
   const GS = '\x1d'
   const LF = '\x0a'
-  
+
   let output = ''
-  
+
   // Initialize
   output += ESC + '@'  // Reset
   output += ESC + 'E\x01'  // BOLD ON
-  
+
   // ============ LOGO / HEADER ============
   output += ESC + 'a\x01'  // CENTER
   output += LF
@@ -597,7 +597,7 @@ function generateReceiptEscpos(order, payment) {
   output += 'PS' + LF
   output += GS + '!' + '\x00'  // Reset size
   output += LF
-  
+
   // TITLE
   output += GS + '!' + '\x31'  // 2x size
   output += 'STRUK PEMBAYARAN' + LF
@@ -605,7 +605,7 @@ function generateReceiptEscpos(order, payment) {
   output += 'Pempek Sen Sen' + LF
   output += 'Terima Kasih Berbelanja' + LF
   output += LF
-  
+
   // ============ SEPARATOR & ORDER INFO ============
   output += ESC + 'a\x00'  // LEFT
   output += '=====================================\n'
@@ -617,11 +617,11 @@ function generateReceiptEscpos(order, payment) {
   }) + LF
   output += '=====================================\n'
   output += LF
-  
+
   // ============ ITEMS HEADER ============
   output += 'ITEM             QTY  HARGA' + LF
   output += '- - - - - - - - - - - - - - - - - - - \n'
-  
+
   // ITEMS
   for (const item of order.items) {
     const name = (item.itemName || 'Item').substring(0, 16).padEnd(16)
@@ -629,10 +629,10 @@ function generateReceiptEscpos(order, payment) {
     const subtotal = formatRupiah(item.subtotal || 0).substring(0, 11).padStart(11)
     output += name + qty + ' ' + subtotal + LF
   }
-  
+
   output += '- - - - - - - - - - - - - - - - - - - \n'
   output += LF
-  
+
   // ============ TOTAL ============
   output += ESC + 'a\x01'  // CENTER
   output += GS + '!' + '\x31'  // 2x size
@@ -641,7 +641,7 @@ function generateReceiptEscpos(order, payment) {
   output += GS + '!' + '\x00'  // Reset
   output += ESC + 'a\x00'  // LEFT
   output += LF + LF
-  
+
   // ============ PAYMENT INFO ============
   output += '=====================================\n'
   output += 'Metode  : ' + (payment.method || 'CASH').substring(0, 15).padEnd(15) + LF
@@ -649,7 +649,7 @@ function generateReceiptEscpos(order, payment) {
   output += 'Kembali : ' + formatRupiah(payment.changeAmount || 0) + LF
   output += '=====================================\n'
   output += LF
-  
+
   // ============ FOOTER ============
   output += ESC + 'a\x01'  // CENTER
   output += GS + '!' + '\x11'  // 2x width
@@ -661,11 +661,11 @@ function generateReceiptEscpos(order, payment) {
     minute: '2-digit'
   }) + LF
   output += LF
-  
+
   // Paper cut
   output += LF + LF + LF
   output += GS + 'V\x42\x00'
-  
+
   return output
 }
 
@@ -718,7 +718,7 @@ export async function confirmPaymentCash(req, res) {
   // Generate ESCPOS untuk Bluetooth printer
   const escposData = generateReceiptEscpos(order, order.payment)
 
-  res.json({ 
+  res.json({
     success: true,
     type: 'RECEIPT',
     escposData,
@@ -823,7 +823,7 @@ export async function confirmPaymentQRIS(req, res) {
   // Generate ESCPOS untuk Bluetooth printer
   const escposData = generateReceiptEscpos(order, order.payment)
 
-  res.json({ 
+  res.json({
     success: true,
     type: 'RECEIPT',
     escposData,
@@ -853,7 +853,7 @@ export async function getSalesAnalytics(req, res) {
     for (const order of orders) {
       let key
       const date = new Date(order.createdAt)
-      
+
       if (period === 'daily') {
         // Format: YYYY-MM-DD
         const yyyy = date.getFullYear()
