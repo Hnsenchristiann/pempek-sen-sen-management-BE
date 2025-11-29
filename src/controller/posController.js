@@ -592,17 +592,28 @@ function generateReceiptEscpos(order, payment) {
   // Initialize
   output += ESC + '@'
 
-  // ========= HEADER / LOGO =========
+  // ========= HEADER =========
   output += ESC + 'a\x01'        // Center
   output += LF
-  output += GS + '!\x22'         // Font 3x (aman untuk 58mm)
-  // output += 'PS' + LF
-  output += GS + '!\x00'
+
+  // Nama toko (besar, tapi tidak terlalu besar)
+  output += GS + '!\x11'         // 2x height + bold
   output += 'Pempek Sen Sen' + LF
-  output += 'Jl. Padat Karya, Gn. Ibul Bar., Kec. Prabumulih Tim., Kota Prabumulih, Sumatera Selatan 31113' + LF + LF
+  output += GS + '!\x00'         // Normal size
+
+  // Space sebelum alamat
+  output += LF
+
+  // Alamat
+  output += 'Jl. Padat Karya, Gn. Ibul Bar., Kec. Prabumulih Tim.' + LF
+  output += 'Kota Prabumulih, Sumatera Selatan 31113' + LF
+  output += '085279719788' + LF
+
+  // Space setelah alamat
+  output += LF
 
   // ========= ORDER INFO =========
-  output += ESC + 'a\x00'        // Left
+  output += ESC + 'a\x00'
   output += EQLINE
   output += `No Antrian : ${String(order.queueNumber || 'XXX').padStart(3, '0')}` + LF
   output += `Meja       : ${String(order.tableNumber || '-')}` + LF
@@ -624,10 +635,9 @@ function generateReceiptEscpos(order, payment) {
 
   // ========= TOTAL =========
   output += ESC + 'a\x01'
-  output += GS + '!\x11'         // Bold & 2x width
-  output += `TOTAL  : ${(formatRupiah(order.total))}`
-  // output += formatRupiah(order.total) + LF
-  output += GS + '!\x00' + LF
+  output += GS + '!\x01'         // Sedikit lebih besar, tapi tidak besar banget
+  output += `TOTAL : ${formatRupiah(order.total)}` + LF
+  output += GS + '!\x00'
 
   // ========= PAYMENT =========
   output += ESC + 'a\x00'
@@ -639,11 +649,10 @@ function generateReceiptEscpos(order, payment) {
 
   // ========= FOOTER =========
   output += ESC + 'a\x01'
-  output += GS + '!\x11'
+  output += GS + '!\x01'          // Sedikit lebih besar dari normal
   output += 'TERIMA KASIH' + LF
   output += GS + '!\x00'
   output += 'Semoga puas dengan layanan kami' + LF
-  output += new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + LF
 
   // Feed & Cut
   output += LF + LF + LF
@@ -651,6 +660,7 @@ function generateReceiptEscpos(order, payment) {
 
   return output
 }
+
 
 
 function formatRupiah(amount) {
