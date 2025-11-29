@@ -607,6 +607,7 @@ function generateReceiptEscpos(order, payment) {
   // Alamat
   output += 'Jl. Padat Karya, Gn. Ibul Bar., Kec. Prabumulih Tim.' + LF
   output += 'Kota Prabumulih, Sumatera Selatan 31113' + LF
+  output += LF
   output += '085279719788' + LF
 
   // Space setelah alamat
@@ -631,13 +632,23 @@ function generateReceiptEscpos(order, payment) {
     output += `${name}${qty}${subtotal}` + LF
   }
 
-  output += LINE + LF
+  output += LINE
 
   // ========= TOTAL =========
-  output += ESC + 'a\x01'
-  output += GS + '!\x01'         // Sedikit lebih besar, tapi tidak besar banget
-  output += `TOTAL : ${formatRupiah(order.total)}` + LF
+  output += ESC + 'a\x00'           // Left align
+  output += GS + '!\x00'            // Ukuran normal dulu
+
+  const totalLabel = 'TOTAL : '
+  const totalValue = formatRupiah(order.total)
+
+  const maxChars = 32
+  const spacing = maxChars - totalLabel.length - totalValue.length
+  const spaces = ' '.repeat(Math.max(0, spacing))
+
+  output += GS + '!\x01'            // Ukuran sedikit lebih besar
+  output += totalLabel + spaces + totalValue + LF
   output += GS + '!\x00'
+
 
   // ========= PAYMENT =========
   output += ESC + 'a\x00'
@@ -655,7 +666,7 @@ function generateReceiptEscpos(order, payment) {
   output += 'Semoga puas dengan layanan kami' + LF
 
   // Feed & Cut
-  output += LF + LF + LF
+  output += LF + LF
   output += GS + 'V\x42\x00'
 
   return output
