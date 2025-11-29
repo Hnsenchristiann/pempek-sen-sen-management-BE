@@ -17,6 +17,7 @@ import grabRoutes from './routes/grab.routes.js'
 import menuRoutes from './routes/menu.routes.js'
 import adminRoutes from './routes/admin.routes.js'
 import paketRoutes from './routes/paket.routes.js'
+import printRoutes from './routes/print.routes.js'
 
 import MenuSettings from './models/menuSettings.js'
 import { setupCleanupScheduler } from './utils/cleanupProofImages.js'
@@ -185,6 +186,9 @@ app.use('/api', adminRoutes)
 
 // Paket routes → /api/paket/*
 app.use('/api/paket', paketRoutes)
+
+// Print Queue routes → /api/print/*
+app.use('/api/print', printRoutes)
 
 // Router utama proyekmu
 app.use('/api', apiRouter)

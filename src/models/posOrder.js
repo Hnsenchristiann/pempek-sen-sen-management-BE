@@ -37,4 +37,22 @@ const PosOrderSchema = new mongoose.Schema({
 // Index untuk efficient cleanup: cari payment dengan uploadedAt > 7 hari
 PosOrderSchema.index({ 'payment.uploadedAt': 1 })
 
-export default mongoose.model('PosOrder', PosOrderSchema)
+// ===== PRINT QUEUE MODEL =====
+// Untuk tablet polling sistem print
+const PrintQueueSchema = new mongoose.Schema({
+  escposData: { type: String, required: true },
+  printType: { type: String, enum: ['kitchen', 'receipt', 'test'], required: true },
+  orderId: { type: String },
+  status: { type: String, enum: ['pending', 'printing', 'printed'], default: 'pending' },
+  createdAt: { type: Date, default: Date.now },
+  printedAt: { type: Date },
+  deviceId: { type: String } // optional: track which tablet printed
+})
+
+PrintQueueSchema.index({ status: 1, createdAt: 1 })
+
+const PosOrderModel = mongoose.model('PosOrder', PosOrderSchema)
+const PrintQueueModel = mongoose.model('PrintQueue', PrintQueueSchema)
+
+export { PosOrderModel, PrintQueueModel }
+export default PosOrderModel
