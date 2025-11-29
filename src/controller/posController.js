@@ -596,10 +596,10 @@ function generateReceiptEscpos(order, payment) {
   output += ESC + 'a\x01'        // Center
   output += LF
   output += GS + '!\x22'         // Font 3x (aman untuk 58mm)
-  output += 'PS' + LF
+  // output += 'PS' + LF
   output += GS + '!\x00'
   output += 'Pempek Sen Sen' + LF
-  output += 'Terima Kasih Telah Berbelanja' + LF + LF
+  output += 'Jl. Padat Karya, Gn. Ibul Bar., Kec. Prabumulih Tim., Kota Prabumulih, Sumatera Selatan 31113' + LF + LF
 
   // ========= ORDER INFO =========
   output += ESC + 'a\x00'        // Left
@@ -625,8 +625,8 @@ function generateReceiptEscpos(order, payment) {
   // ========= TOTAL =========
   output += ESC + 'a\x01'
   output += GS + '!\x11'         // Bold & 2x width
-  output += 'TOTAL' + LF
-  output += formatRupiah(order.total) + LF
+  output += `TOTAL  : ${(formatRupiah(order.total))}`
+  // output += formatRupiah(order.total) + LF
   output += GS + '!\x00' + LF
 
   // ========= PAYMENT =========
