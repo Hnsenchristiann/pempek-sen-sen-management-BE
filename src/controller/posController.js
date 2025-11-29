@@ -426,7 +426,7 @@ function generateKitchenTicketEscpos(order) {
   output += LF
   
   // ============ ORDER INFO ============
-  output += '=====================================\n'
+  output += '================================\n'
   output += ' ORDER: ' + String(order.queueNumber || 'XXX').padStart(3, '0') + LF
   output += ' TABLE: ' + String(order.tableNumber || '-') + LF
   output += ' TIME : ' + new Date(order.createdAt).toLocaleTimeString('id-ID', {
@@ -434,7 +434,7 @@ function generateKitchenTicketEscpos(order) {
     minute: '2-digit',
     second: '2-digit'
   }) + LF
-  output += '=====================================\n'
+  output += '================================\n'
   output += LF
   
   // ============ ITEMS SECTION ============
@@ -443,14 +443,13 @@ function generateKitchenTicketEscpos(order) {
     output += GS + '!' + '\x77'  // 4x size
     output += '[' + String(item.qty).padStart(2, '0') + ']' + LF
     
-    // Item name - bold
-    output += GS + '!' + '\x11'  // 2x width
-    output += item.itemName.toUpperCase().substring(0, 22) + LF
-    output += GS + '!' + '\x00'  // Reset size
+    // Item name - normal size (same as order info)
+    output += GS + '!' + '\x00'  // Reset size to normal
+    output += item.itemName.toUpperCase().substring(0, 32) + LF
     
     // Notes if any
     if (item.note) {
-      output += '  → NOTE: ' + item.note.substring(0, 20) + LF
+      output += '  → NOTE: ' + item.note.substring(0, 28) + LF
     }
     
     // Paket items breakdown
@@ -459,14 +458,14 @@ function generateKitchenTicketEscpos(order) {
       for (const pItem of item.paketItems) {
         const pQty = (pItem.quantity || 1) * item.qty
         const pName = pItem.itemId?.name || pItem.name || 'Item'
-        output += '    • ' + pQty + 'x ' + pName.substring(0, 18) + LF
+        output += '    • ' + pQty + 'x ' + pName.substring(0, 24) + LF
       }
     }
     
     output += LF
   }
   
-  output += '=====================================\n'
+  output += '================================\n'
   output += LF
   
   // ============ ORDER TYPE ============
