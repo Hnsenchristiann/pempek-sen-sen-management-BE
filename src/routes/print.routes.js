@@ -253,6 +253,138 @@ router.get('/download/:jobId', async (req, res) => {
 })
 
 /**
+ * POST /api/print/save-escpos
+ * Save ESCPOS data sebagai file yang bisa di-download ke tablet
+ */
+router.post('/save-escpos', async (req, res) => {
+  try {
+    const { escposData, printType, jobId } = req.body
+
+    if (!escposData) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing escposData'
+      })
+    }
+
+    // Generate filename
+    const timestamp = Date.now()
+    const filename = `print_${timestamp}_${printType}_${jobId || 'manual'}.escpos`
+    const filepath = path.join(AUTOPRINT_FOLDER, filename)
+
+    // Convert escposData to binary buffer
+    let buffer
+    if (typeof escposData === 'string') {
+      if (escposData.match(/^[A-Za-z0-9+/=]+$/)) {
+        // Base64 encoded
+        buffer = Buffer.from(escposData, 'base64')
+      } else {
+        // Raw UTF-8 string
+        buffer = Buffer.from(escposData, 'utf8')
+      }
+    } else {
+      buffer = Buffer.from(escposData)
+    }
+
+    // Write file to autoprint folder
+    fs.writeFileSync(filepath, buffer)
+    console.log(`💾 ESCPOS saved: ${filename} (${buffer.length} bytes)`)
+
+    // Generate download URL (serve from static uploads folder)
+    const backendDomain = process.env.NODE_ENV === 'production' 
+      ? 'https://pempek-sen-sen-management-be.onrender.com'
+      : 'http://localhost:5000'
+    const downloadUrl = `${backendDomain}/uploads/autoprint/${filename}`
+
+    // Auto-cleanup: keep only 10 newest files
+    try {
+      const files = fs.readdirSync(AUTOPRINT_FOLDER)
+        .filter(f => f.endsWith('.escpos'))
+        .map(f => ({
+          name: f,
+          path: path.join(AUTOPRINT_FOLDER, f),
+          time: fs.statSync(path.join(AUTOPRINT_FOLDER, f)).mtime.getTime()
+        }))
+        .sort((a, b) => b.time - a.time)
+
+      if (files.length > 10) {
+        files.slice(10).forEach(f => {
+          try {
+            fs.unlinkSync(f.path)
+            console.log(`🗑️  Deleted old: ${f.name}`)
+          } catch (e) {
+            console.warn(`Failed to delete ${f.name}:`, e.message)
+          }
+        })
+      }
+    } catch (cleanupErr) {
+      console.warn('Cleanup warning:', cleanupErr.message)
+    }
+
+    res.json({
+      success: true,
+      filename,
+      filepath,
+      downloadUrl,
+      savePath: AUTOPRINT_FOLDER,
+      size: buffer.length,
+      message: 'ESCPOS file saved successfully'
+    })
+  } catch (error) {
+    console.error('Save ESCPOS error:', error)
+    res.status(500).json({
+      success: false,
+      error: error.message
+    })
+  }
+})
+
+/**
+ * GET /api/print/download-file/:filename
+ * Download ESCPOS file (untuk tablet access)
+ */
+router.get('/download-file/:filename', (req, res) => {
+  try {
+    const { filename } = req.params
+
+    // Security: only allow .escpos files
+    if (!filename.endsWith('.escpos') || filename.includes('..') || filename.includes('/')) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid filename'
+      })
+    }
+
+    const filepath = path.join(AUTOPRINT_FOLDER, filename)
+
+    // Check if file exists
+    if (!fs.existsSync(filepath)) {
+      return res.status(404).json({
+        success: false,
+        error: 'File not found'
+      })
+    }
+
+    // Send file as download
+    res.setHeader('Content-Type', 'application/octet-stream')
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
+    res.download(filepath, filename, (err) => {
+      if (err) {
+        console.error('Download error:', err)
+      } else {
+        console.log(`📥 File downloaded: ${filename}`)
+      }
+    })
+  } catch (error) {
+    console.error('Download file error:', error)
+    res.status(500).json({
+      success: false,
+      error: error.message
+    })
+  }
+})
+
+/**
  * POST /api/print/save-for-autoprint
  * Save ESCPOS data ke file untuk AutoPrint RawBT (folder watching)
  * AutoPrint akan otomatis pick file terbaru dan print
