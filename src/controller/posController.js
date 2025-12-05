@@ -2,7 +2,10 @@ import mongoose from 'mongoose'
 import PosOrder from '../models/posOrder.js'
 import Item from '../models/items.js'
 import Paket from '../models/Paket.js'
+import Promo from '../models/promo.js'
 import InventoryMovement from '../models/inventoryMovement.js'
+import StockVaccum from '../models/stockVaccum.js'
+import StockVaccumMovement from '../models/stockVaccumMovement.js'
 import path from 'path'
 import fs from 'fs'
 
@@ -87,6 +90,7 @@ async function createSaleInventoryMovements(order) {
       items: order.items.map(it => ({
         itemName: it.itemName,
         isPaket: it.isPaket,
+        isPromo: it.isPromo,
         paketItemsCount: it.paketItems?.length || 0,
         paketItems: it.paketItems
       }))
@@ -94,7 +98,7 @@ async function createSaleInventoryMovements(order) {
 
     for (const item of order.items) {
       // Regular item
-      if (!item.isPaket) {
+      if (!item.isPaket && !item.isPromo) {
         await InventoryMovement.create({
           itemId: item.itemId,
           date: movementDate,
@@ -104,17 +108,25 @@ async function createSaleInventoryMovements(order) {
           createdBy: 'POS System',
         })
         await recomputeCurrentStock(item.itemId)
-      } else {
-        // Paket - reduce stock for each item in paket
+      } else if (item.isPaket && !item.isPromo) {
+        // Paket - reduce stock from StockVaccum for each item in paket
         if (item.paketItems && item.paketItems.length > 0) {
           console.log(`📦 Processing paket "${item.itemName}" with ${item.paketItems.length} items`)
           for (const paketItem of item.paketItems) {
             const itemIdToReduce = paketItem.itemId?._id || paketItem.itemId
             const qty = (paketItem.quantity || 1) * item.qty
 
-            console.log(`  └─ Reducing item ${itemIdToReduce} by qty ${qty}`)
+            console.log(`  └─ Reducing Stock Vaccum for item ${itemIdToReduce} by qty ${qty}`)
 
-            await InventoryMovement.create({
+            // Reduce from StockVaccum instead of regular stock
+            await StockVaccum.findOneAndUpdate(
+              { itemId: itemIdToReduce },
+              { $inc: { currentStock: -qty } },
+              { new: true }
+            )
+
+            // Create movement record in StockVaccumMovement
+            await StockVaccumMovement.create({
               itemId: itemIdToReduce,
               date: movementDate,
               type: 'SALE_OUT',
@@ -122,10 +134,33 @@ async function createSaleInventoryMovements(order) {
               note: `Penjualan Paket: ${item.itemName} - Queue #${order.queueNumber} (Table ${order.tableNumber})`,
               createdBy: 'POS System',
             })
-            await recomputeCurrentStock(itemIdToReduce)
           }
         } else {
           console.log(`⚠️  Paket "${item.itemName}" has no paketItems or empty array`)
+        }
+      } else if (item.isPaket && item.isPromo) {
+        // Promo - reduce stock from regular inventory for each item in promo
+        if (item.paketItems && item.paketItems.length > 0) {
+          console.log(`🎉 Processing promo "${item.itemName}" with ${item.paketItems.length} items`)
+          for (const promoItem of item.paketItems) {
+            const itemIdToReduce = promoItem.itemId?._id || promoItem.itemId
+            const qty = (promoItem.quantity || 1) * item.qty
+
+            console.log(`  └─ Reducing regular stock for item ${itemIdToReduce} by qty ${qty}`)
+
+            // Reduce from regular stock (InventoryMovement)
+            await InventoryMovement.create({
+              itemId: itemIdToReduce,
+              date: movementDate,
+              type: 'SALE_OUT',
+              qty: -qty,
+              note: `Penjualan Promo: ${item.itemName} - Queue #${order.queueNumber} (Table ${order.tableNumber})`,
+              createdBy: 'POS System',
+            })
+            await recomputeCurrentStock(itemIdToReduce)
+          }
+        } else {
+          console.log(`⚠️  Promo "${item.itemName}" has no items or empty array`)
         }
       }
     }
@@ -216,7 +251,7 @@ export async function getOrCreateOrderForTable(req, res) {
 
 export async function addItemToOrder(req, res) {
   const { orderId } = req.params
-  const { itemId, paketId, qty = 1, note } = req.body
+  const { itemId, paketId, promoId, qty = 1, note } = req.body
 
   const order = await PosOrder.findById(orderId)
   if (!order) return res.status(404).json({ message: 'Order not found' })
@@ -235,7 +270,7 @@ export async function addItemToOrder(req, res) {
     })
 
     const price = Number(paket.harga) || 0
-    const existIdx = order.items.findIndex(it => String(it.itemId) === String(paket._id) && it.isPaket)
+    const existIdx = order.items.findIndex(it => String(it.itemId) === String(paket._id) && it.isPaket && !it.isPromo)
     if (existIdx >= 0) {
       order.items[existIdx].qty += Number(qty)
       order.items[existIdx].subtotal = order.items[existIdx].qty * price
@@ -249,7 +284,39 @@ export async function addItemToOrder(req, res) {
         note,
         subtotal: Number(qty) * price,
         isPaket: true,
+        isPromo: false,
         paketItems: paket.items, // Store paket items for stock reduction later
+      })
+    }
+  } else if (promoId) {
+    // Handle Promo
+    const promo = await Promo.findById(promoId).populate('items.itemId')
+    if (!promo) return res.status(404).json({ message: 'Promo not found' })
+
+    console.log('🎉 Adding promo to order:', {
+      promoId: promo._id,
+      promoName: promo.name,
+      promoItems: promo.items,
+      itemsCount: promo.items?.length
+    })
+
+    const price = Number(promo.promoPrice) || 0
+    const existIdx = order.items.findIndex(it => String(it.itemId) === String(promo._id) && it.isPromo)
+    if (existIdx >= 0) {
+      order.items[existIdx].qty += Number(qty)
+      order.items[existIdx].subtotal = order.items[existIdx].qty * price
+      if (note) order.items[existIdx].note = note
+    } else {
+      order.items.push({
+        itemId: promo._id,
+        itemName: promo.name,
+        price,
+        qty: Number(qty),
+        note,
+        subtotal: Number(qty) * price,
+        isPaket: true,
+        isPromo: true,
+        paketItems: promo.items, // Store promo items for stock reduction later
       })
     }
   } else {
@@ -272,6 +339,7 @@ export async function addItemToOrder(req, res) {
         note,
         subtotal: Number(qty) * price,
         isPaket: false,
+        isPromo: false,
       })
     }
   }
@@ -289,6 +357,7 @@ export async function addItemToOrder(req, res) {
     items: order.items.map(it => ({
       itemName: it.itemName,
       isPaket: it.isPaket,
+      isPromo: it.isPromo,
       paketItemsCount: it.paketItems?.length || 0
     }))
   })
@@ -369,6 +438,129 @@ export async function saveOrder(req, res) {
   const order = await PosOrder.findById(orderId).lean()
   if (!order) return res.status(404).json({ message: 'Order not found' })
   res.json({ ok: true, order })
+}
+
+// ===== CUSTOMER ORDER FROM QR CODE =====
+/**
+ * Create order dari customer scanning QR code
+ * Customer select items dari menu, lalu submit order
+ * Order masuk ke table admin automatically
+ * 
+ * Flow:
+ * 1. Customer scan QR → /customer-order/table/{tableNumber}
+ * 2. Customer select items + qty
+ * 3. Customer click "Pesan"
+ * 4. POST /api/pos/customer-order dengan items
+ * 5. Backend create/update order untuk table tersebut
+ * 6. Order muncul di admin POSTableOrder untuk table itu
+ * 7. Admin bisa proceed like normal (print, checkout, dll)
+ */
+export async function createOrderFromCustomer(req, res) {
+  try {
+    const { tableNumber, items } = req.body
+
+    // Validate input
+    if (!tableNumber || !items || items.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'tableNumber dan items required'
+      })
+    }
+
+    // Validate all items exist
+    const itemIds = items.map(i => i.itemId)
+    const foundItems = await Item.find({ _id: { $in: itemIds } })
+    
+    if (foundItems.length !== items.length) {
+      return res.status(400).json({
+        success: false,
+        message: 'Some items not found'
+      })
+    }
+
+    // Create map untuk quick lookup
+    const itemMap = {}
+    foundItems.forEach(item => {
+      itemMap[item._id] = item
+    })
+
+    // Find or create order for this table
+    let order = await PosOrder.findOne({
+      tableNumber: Number(tableNumber),
+      status: { $in: ['OPEN', 'SENT_TO_KITCHEN', 'AWAITING_PAYMENT'] }
+    }).sort({ createdAt: -1 })
+
+    if (!order) {
+      // Create new order
+      const queueNumber = await generateQueueNumber()
+      order = await PosOrder.create({
+        tableNumber: Number(tableNumber),
+        queueNumber,
+        status: 'OPEN',
+        items: [],
+        total: 0,
+      })
+      console.log(`📝 Created new order for table ${tableNumber}: ${order._id}`)
+    } else {
+      console.log(`📝 Using existing order for table ${tableNumber}: ${order._id}`)
+    }
+
+    // Add items to order
+    for (const itemReq of items) {
+      const foundItem = itemMap[itemReq.itemId]
+      if (!foundItem) continue
+
+      const price = Number(foundItem.price) || 0
+      const qty = Number(itemReq.qty) || 1
+
+      // Check if item already in order
+      const existIdx = order.items.findIndex(
+        it => String(it.itemId) === String(itemReq.itemId) && !it.isPaket
+      )
+
+      if (existIdx >= 0) {
+        // Item sudah ada, tambah quantity
+        order.items[existIdx].qty += qty
+        order.items[existIdx].subtotal = order.items[existIdx].qty * price
+      } else {
+        // Item baru
+        order.items.push({
+          itemId: foundItem._id,
+          itemName: foundItem.name,
+          price,
+          qty,
+          subtotal: qty * price,
+          isPaket: false,
+          isPromo: false,
+        })
+      }
+    }
+
+    // Recompute total
+    order.total = computeTotals(order.items)
+    
+    // Save order
+    await order.save()
+    await order.populate('items.paketItems.itemId')
+
+    console.log(`✅ Customer order created/updated:`, {
+      tableNumber: order.tableNumber,
+      itemsCount: order.items.length,
+      total: order.total
+    })
+
+    res.json({
+      success: true,
+      message: 'Order created successfully',
+      order
+    })
+  } catch (error) {
+    console.error('Error creating customer order:', error)
+    res.status(500).json({
+      success: false,
+      message: error.message
+    })
+  }
 }
 
 // Kitchen print

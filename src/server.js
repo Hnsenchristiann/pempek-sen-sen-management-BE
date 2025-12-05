@@ -18,6 +18,8 @@ import menuRoutes from './routes/menu.routes.js'
 import adminRoutes from './routes/admin.routes.js'
 import paketRoutes from './routes/paket.routes.js'
 import printRoutes from './routes/print.routes.js'
+import stockVaccumRoutes from './routes/stockVaccum.routes.js'
+import promoRoutes from './routes/promo.routes.js'
 
 import MenuSettings from './models/menuSettings.js'
 import { setupCleanupScheduler } from './utils/cleanupProofImages.js'
@@ -187,10 +189,16 @@ app.use('/api', adminRoutes)
 // Paket routes → /api/paket/*
 app.use('/api/paket', paketRoutes)
 
-// Print Queue routes → /api/print/*
-app.use('/api/print', printRoutes)
+// Stock Vaccum routes → /api/stock-vaccum/*
+app.use('/api/stock-vaccum', stockVaccumRoutes)
 
-// Router utama proyekmu
+// Promo routes → /api/promo/*
+app.use('/api/promo', promoRoutes)
+
+// Print Queue routes → /api/print/*
+app.use('/print', printRoutes)
+
+// Router utama proyekmu (PINDAH KE PALING AKHIR agar tidak intercept specific routes)
 app.use('/api', apiRouter)
 
 

@@ -8,6 +8,7 @@ import {
   getTables,
   getOrCreateOrderForTable,
   addItemToOrder, updateItemQty, updateOrderType, removeItem, saveOrder,
+  createOrderFromCustomer,
   printToKitchen, proceedToCheckout,
   confirmPaymentCash, confirmPaymentQRIS, getTransactions, getSalesAnalytics,
 } from '../controller/posController.js'
@@ -56,5 +57,8 @@ router.get('/transactions', getTransactions)
 
 // Sales Analytics
 router.get('/analytics', getSalesAnalytics)
+
+// Customer Order from QR Code
+router.post('/customer-order', createOrderFromCustomer)
 
 export default router
