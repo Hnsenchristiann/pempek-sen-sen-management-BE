@@ -196,7 +196,7 @@ app.use('/api/stock-vaccum', stockVaccumRoutes)
 app.use('/api/promo', promoRoutes)
 
 // Print Queue routes → /api/print/*
-app.use('/print', printRoutes)
+app.use('/api/print', printRoutes)
 
 // Router utama proyekmu (PINDAH KE PALING AKHIR agar tidak intercept specific routes)
 app.use('/api', apiRouter)
