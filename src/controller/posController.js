@@ -468,20 +468,26 @@ export async function createOrderFromCustomer(req, res) {
     }
 
     // Validate all items exist
-    const itemIds = items.map(i => i.itemId)
+    const itemIds = items.map(i => new mongoose.Types.ObjectId(i.itemId))
     const foundItems = await Item.find({ _id: { $in: itemIds } })
     
     if (foundItems.length !== items.length) {
+      console.error('❌ Item validation failed', {
+        requested: items.length,
+        found: foundItems.length,
+        requestedIds: items.map(i => i.itemId),
+        foundIds: foundItems.map(i => i._id.toString())
+      })
       return res.status(400).json({
         success: false,
         message: 'Some items not found'
       })
     }
 
-    // Create map untuk quick lookup
+    // Create map untuk quick lookup - convert to string keys for safe comparison
     const itemMap = {}
     foundItems.forEach(item => {
-      itemMap[item._id] = item
+      itemMap[item._id.toString()] = item
     })
 
     // Find or create order for this table
@@ -507,8 +513,12 @@ export async function createOrderFromCustomer(req, res) {
 
     // Add items to order
     for (const itemReq of items) {
-      const foundItem = itemMap[itemReq.itemId]
-      if (!foundItem) continue
+      const itemIdStr = new mongoose.Types.ObjectId(itemReq.itemId).toString()
+      const foundItem = itemMap[itemIdStr]
+      if (!foundItem) {
+        console.warn('❌ Item not found in map:', itemIdStr)
+        continue
+      }
 
       const price = Number(foundItem.price) || 0
       const qty = Number(itemReq.qty) || 1
