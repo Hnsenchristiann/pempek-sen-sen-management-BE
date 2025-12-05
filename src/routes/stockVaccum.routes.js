@@ -176,6 +176,7 @@ router.delete('/movements/:id', async (req, res) => {
 /**
  * GET /api/stock-vaccum/balance
  * Get current balance (total stock) for an item
+ * Calculates from movements if StockVaccum record doesn't exist yet
  */
 router.get('/balance', async (req, res) => {
   try {
@@ -188,19 +189,36 @@ router.get('/balance', async (req, res) => {
       })
     }
 
-    const stock = await StockVaccum.findOne({ itemId }).populate('itemId', 'name')
+    // First try to get from StockVaccum record
+    let stock = await StockVaccum.findOne({ itemId }).populate('itemId', 'name')
 
+    // If no StockVaccum record exists, calculate balance from movements
     if (!stock) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Stock vaccum not found',
-        balance: 0
+      const movements = await StockVaccumMovement.find({ itemId })
+      const calculatedBalance = movements.reduce((sum, mov) => sum + mov.qty, 0)
+      
+      // If there are movements, return calculated balance (success)
+      if (movements.length > 0) {
+        return res.json({
+          success: true,
+          balance: calculatedBalance,
+          source: 'calculated_from_movements',
+          movementCount: movements.length
+        })
+      }
+      
+      // If no movements and no StockVaccum record, return 0 (success, but no data yet)
+      return res.json({
+        success: true,
+        balance: 0,
+        source: 'new_item_no_movements'
       })
     }
 
     res.json({
       success: true,
       balance: stock.currentStock,
+      source: 'stock_vaccum_record',
       stock
     })
   } catch (error) {

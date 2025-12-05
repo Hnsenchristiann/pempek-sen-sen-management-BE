@@ -468,19 +468,56 @@ export async function createOrderFromCustomer(req, res) {
     }
 
     // Validate all items exist
-    const itemIds = items.map(i => new mongoose.Types.ObjectId(i.itemId))
-    const foundItems = await Item.find({ _id: { $in: itemIds } })
+    console.log('📌 Validating items from customer order:', {
+      totalRequested: items.length,
+      itemIds: items.map(i => i.itemId),
+      payload: items
+    })
+
+    // Convert and validate itemIds
+    const itemIds = []
+    for (const item of items) {
+      try {
+        if (!item.itemId) {
+          throw new Error('Missing itemId in request')
+        }
+        itemIds.push(new mongoose.Types.ObjectId(item.itemId))
+      } catch (e) {
+        console.error('❌ Invalid itemId format:', item.itemId, e.message)
+        return res.status(400).json({
+          success: false,
+          message: `Invalid item ID format: ${item.itemId}`
+        })
+      }
+    }
+
+    // Query database for items
+    console.log('🔍 Querying database for items:', itemIds.map(id => id.toString()))
+    const foundItems = await Item.find({ _id: { $in: itemIds } }).lean()
+    
+    console.log('✅ Items found from DB:', {
+      requested: items.length,
+      found: foundItems.length,
+      foundIds: foundItems.map(i => i._id.toString())
+    })
     
     if (foundItems.length !== items.length) {
       console.error('❌ Item validation failed', {
         requested: items.length,
         found: foundItems.length,
         requestedIds: items.map(i => i.itemId),
-        foundIds: foundItems.map(i => i._id.toString())
+        foundIds: foundItems.map(i => i._id.toString()),
+        missingIds: items
+          .map(i => i.itemId)
+          .filter(id => !foundItems.find(f => f._id.toString() === id))
       })
       return res.status(400).json({
         success: false,
-        message: 'Some items not found'
+        message: 'Some items not found',
+        details: {
+          requested: items.length,
+          found: foundItems.length
+        }
       })
     }
 
@@ -489,6 +526,8 @@ export async function createOrderFromCustomer(req, res) {
     foundItems.forEach(item => {
       itemMap[item._id.toString()] = item
     })
+    
+    console.log('📍 Item map ready:', Object.keys(itemMap))
 
     // Find or create order for this table
     let order = await PosOrder.findOne({
