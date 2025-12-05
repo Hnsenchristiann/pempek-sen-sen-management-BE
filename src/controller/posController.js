@@ -87,18 +87,20 @@ async function createSaleInventoryMovements(order) {
 
     console.log('🔍 Creating inventory movements for order:', {
       orderId: order._id,
+      itemCount: order.items.length,
       items: order.items.map(it => ({
         itemName: it.itemName,
         isPaket: it.isPaket,
         isPromo: it.isPromo,
+        qty: it.qty,
         paketItemsCount: it.paketItems?.length || 0,
-        paketItems: it.paketItems
       }))
     })
 
     for (const item of order.items) {
-      // Regular item
+      // Regular item (not paket, not promo)
       if (!item.isPaket && !item.isPromo) {
+        console.log(`✅ Regular item: ${item.itemName} (qty: ${item.qty})`)
         await InventoryMovement.create({
           itemId: item.itemId,
           date: movementDate,
@@ -108,22 +110,25 @@ async function createSaleInventoryMovements(order) {
           createdBy: 'POS System',
         })
         await recomputeCurrentStock(item.itemId)
-      } else if (item.isPaket && !item.isPromo) {
-        // Paket - reduce stock from StockVaccum for each item in paket
+      } 
+      // Paket (not promo) - reduce stock from StockVaccum
+      else if (item.isPaket && !item.isPromo) {
+        console.log(`📦 Paket: ${item.itemName} (qty: ${item.qty})`)
         if (item.paketItems && item.paketItems.length > 0) {
-          console.log(`📦 Processing paket "${item.itemName}" with ${item.paketItems.length} items`)
+          console.log(`   └─ Has ${item.paketItems.length} items to process`)
           for (const paketItem of item.paketItems) {
             const itemIdToReduce = paketItem.itemId?._id || paketItem.itemId
             const qty = (paketItem.quantity || 1) * item.qty
 
-            console.log(`  └─ Reducing Stock Vaccum for item ${itemIdToReduce} by qty ${qty}`)
+            console.log(`   └─ Item: ${paketItem.itemId?.name || itemIdToReduce} | Qty to reduce: ${qty}`)
 
-            // Reduce from StockVaccum instead of regular stock
-            await StockVaccum.findOneAndUpdate(
+            // Reduce from StockVaccum
+            const vacResult = await StockVaccum.findOneAndUpdate(
               { itemId: itemIdToReduce },
               { $inc: { currentStock: -qty } },
               { new: true }
             )
+            console.log(`      └─ StockVaccum updated: currentStock = ${vacResult?.currentStock || 'N/A'}`)
 
             // Create movement record in StockVaccumMovement
             await StockVaccumMovement.create({
@@ -136,17 +141,19 @@ async function createSaleInventoryMovements(order) {
             })
           }
         } else {
-          console.log(`⚠️  Paket "${item.itemName}" has no paketItems or empty array`)
+          console.warn(`⚠️  Paket "${item.itemName}" has no paketItems or empty array`)
         }
-      } else if (item.isPaket && item.isPromo) {
-        // Promo - reduce stock from regular inventory for each item in promo
+      } 
+      // Promo - reduce stock from regular inventory
+      else if (item.isPaket && item.isPromo) {
+        console.log(`🎉 Promo: ${item.itemName} (qty: ${item.qty})`)
         if (item.paketItems && item.paketItems.length > 0) {
-          console.log(`🎉 Processing promo "${item.itemName}" with ${item.paketItems.length} items`)
+          console.log(`   └─ Has ${item.paketItems.length} items to process`)
           for (const promoItem of item.paketItems) {
             const itemIdToReduce = promoItem.itemId?._id || promoItem.itemId
             const qty = (promoItem.quantity || 1) * item.qty
 
-            console.log(`  └─ Reducing regular stock for item ${itemIdToReduce} by qty ${qty}`)
+            console.log(`   └─ Item: ${promoItem.itemId?.name || itemIdToReduce} | Qty to reduce: ${qty}`)
 
             // Reduce from regular stock (InventoryMovement)
             await InventoryMovement.create({
@@ -157,15 +164,18 @@ async function createSaleInventoryMovements(order) {
               note: `Penjualan Promo: ${item.itemName} - Queue #${order.queueNumber} (Table ${order.tableNumber})`,
               createdBy: 'POS System',
             })
-            await recomputeCurrentStock(itemIdToReduce)
+            const updated = await recomputeCurrentStock(itemIdToReduce)
+            console.log(`      └─ Item stock recomputed: ${updated?.currentStock || 'N/A'}`)
           }
         } else {
-          console.log(`⚠️  Promo "${item.itemName}" has no items or empty array`)
+          console.warn(`⚠️  Promo "${item.itemName}" has no items or empty array`)
         }
       }
     }
+    
+    console.log('✅ All inventory movements created successfully')
   } catch (err) {
-    console.error('Error creating sale inventory movements:', err)
+    console.error('❌ Error creating sale inventory movements:', err)
   }
 }
 
@@ -945,8 +955,9 @@ export async function confirmPaymentCash(req, res) {
   order.markModified('payment')
   await order.save()
 
-  // Refresh dari DB
+  // Refresh dari DB dengan populate
   order = await PosOrder.findById(orderId)
+  await order.populate('items.paketItems.itemId')
 
   console.log('✅ CASH Payment Confirmed:', {
     orderId: order._id,
@@ -955,11 +966,8 @@ export async function confirmPaymentCash(req, res) {
     changeAmount: order.payment?.changeAmount,
   })
 
-  // Create inventory movements for sold items
+  // Create inventory movements for sold items (with populated paketItems)
   await createSaleInventoryMovements(order)
-
-  // Populate paketItems.itemId
-  await order.populate('items.paketItems.itemId')
 
   // Generate ESCPOS untuk Bluetooth printer
   const escposData = generateReceiptEscpos(order, order.payment)
@@ -1049,8 +1057,9 @@ export async function confirmPaymentQRIS(req, res) {
   order.markModified('payment')
   await order.save()
 
-  // Refresh dari DB
+  // Refresh dari DB dengan populate
   order = await PosOrder.findById(orderId)
+  await order.populate('items.paketItems.itemId')
 
   console.log('✅ QRIS Payment Confirmed:', {
     orderId: order._id,
@@ -1060,11 +1069,8 @@ export async function confirmPaymentQRIS(req, res) {
     filename: file.filename,
   })
 
-  // Create inventory movements for sold items
+  // Create inventory movements for sold items (with populated paketItems)
   await createSaleInventoryMovements(order)
-
-  // Populate paketItems.itemId
-  await order.populate('items.paketItems.itemId')
 
   // Generate ESCPOS untuk Bluetooth printer
   const escposData = generateReceiptEscpos(order, order.payment)
